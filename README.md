@@ -215,13 +215,3 @@ If you find my work helpful, please consider:
 <a href="https://github.com/sponsors/bwya77">
     <img src="https://img.shields.io/badge/sponsor-30363D?style=for-the-badge&logo=GitHub-Sponsors&logoColor=#EA4AAA" />
 </a>
-
-### Relocation diagnostics and local verification
-
-Automatic relocation chooses an exposed section of the selected display's Dock edge. If another monitor covers the preferred cursor position, DockAnchor uses the midpoint of the widest exposed section. If the entire edge is blocked, it reports that relocation is unavailable. Relocation results are checked through Accessibility and retried up to three times when unconfirmed.
-
-Diagnostics are written to the macOS unified log (subsystem `bwyatt.DockAnchor`, category `Relocation`) and `Library/Logs/DockAnchor/relocation.log` within the app's home directory (its container for sandboxed builds). The file rotates at approximately 1 MB and retains one previous file. Logs include status messages and screen geometry.
-
-Run geometry regression checks with `bash scripts/test-geometry.sh`.
-
-For local development without full Xcode, `bash scripts/build-local.sh /path/to/official/DockAnchor.app` compiles the Swift sources and reuses the official app's icons and compiled Core Data model. It defaults to the Command Line Tools macOS 26.5 SDK; set `DOCKANCHOR_SDK` to another compatible SDK path if needed. The resulting Apple Silicon build is ad-hoc signed with a separate `bwyatt.DockAnchor.local` identifier and requires its own Accessibility permission. Xcode builds retain the normal app identifier and previews.

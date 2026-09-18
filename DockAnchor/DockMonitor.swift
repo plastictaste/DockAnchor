@@ -89,9 +89,7 @@ class DockMonitor: NSObject, ObservableObject {
 
     @Published var isActive = false
     @Published var anchoredDisplay: String = "Primary"
-    @Published var statusMessage = "Dock Anchor Ready" {
-        didSet { RelocationLog.write(statusMessage) }
-    }
+    @Published var statusMessage = "Dock Anchor Ready"
     @Published var availableDisplays: [DisplayInfo] = []
     @Published var needsPermissionReset = false
 
@@ -702,7 +700,6 @@ class DockMonitor: NSObject, ObservableObject {
         case .left: approachPoint.x += 50
         case .right: approachPoint.x -= 50
         }
-        RelocationLog.write("attempt=\(attempt) target=\(anchorDisplay.id) edge=\(edgePoint) displays=\(availableDisplays.map { "\($0.id):\($0.frame)" })")
 
         // Check if dock is already on the anchored display
         if let currentDockDisplay = getCurrentDockDisplayID(), currentDockDisplay == anchorDisplayID {
@@ -802,7 +799,6 @@ class DockMonitor: NSObject, ObservableObject {
                 self.relocationInFlight = false
                 guard self.anchorDisplayUUID == targetUUID else { return }
                 let actual = self.getCurrentDockDisplayID()
-                RelocationLog.write("verification attempt=\(attempt) expected=\(anchorDisplay.id) actual=\(actual.map(String.init) ?? "unknown")")
                 if actual == anchorDisplay.id {
                     self.statusMessage = "Dock relocation verified on \(anchorDisplay.name)"
                 } else if attempt < 3 {
@@ -812,7 +808,7 @@ class DockMonitor: NSObject, ObservableObject {
                         self.relocateDockToAnchoredDisplay(attempt: attempt + 1)
                     }
                 } else {
-                    self.statusMessage = "Could not verify Dock relocation — see relocation.log"
+                    self.statusMessage = "Could not verify Dock relocation"
                 }
             }
         }
@@ -832,7 +828,6 @@ class DockMonitor: NSObject, ObservableObject {
         let result = AXUIElementCopyAttributeValue(dockElement, kAXWindowsAttribute as CFString, &windowsValue)
 
         guard result == .success, let windows = windowsValue as? [AXUIElement], !windows.isEmpty else {
-            RelocationLog.write("Dock window query failed: AX=\(result.rawValue)")
             return nil
         }
 
@@ -841,7 +836,6 @@ class DockMonitor: NSObject, ObservableObject {
         let posResult = AXUIElementCopyAttributeValue(windows[0], kAXPositionAttribute as CFString, &positionValue)
 
         guard posResult == .success else {
-            RelocationLog.write("Dock position query failed: AX=\(posResult.rawValue)")
             return nil
         }
 
@@ -855,7 +849,6 @@ class DockMonitor: NSObject, ObservableObject {
                 position.x += size.width / 2
                 position.y += size.height / 2
             }
-            RelocationLog.write("Dock window center=\(position) size=\(size)")
             for display in availableDisplays {
                 if display.frame.contains(position) {
                     return display.id
