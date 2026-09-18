@@ -276,7 +276,6 @@ class DockMonitor: NSObject, ObservableObject {
         let work = DispatchWorkItem { [weak self] in
             guard let self = self else { return }
             self.pendingRelocationWork = nil
-            self.updateAvailableDisplays()
             self.relocateDockToAnchoredDisplay()
         }
         pendingRelocationWork = work
@@ -306,7 +305,6 @@ class DockMonitor: NSObject, ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) { [weak self] in
             guard let self = self else { return }
             if let currentDock = self.getCurrentDockDisplayID(), currentDock != self.anchorDisplayID {
-                self.updateAvailableDisplays()
                 self.relocateDockToAnchoredDisplay()
             }
         }
@@ -680,7 +678,8 @@ class DockMonitor: NSObject, ObservableObject {
             return
         }
         updateAvailableDisplays()
-        guard let anchorDisplay = availableDisplays.first(where: { $0.id == anchorDisplayID }) else {
+        let targetDisplayID = anchorDisplayID
+        guard let anchorDisplay = availableDisplays.first(where: { $0.id == targetDisplayID }) else {
             statusMessage = "Cannot relocate dock - anchor display not found"
             return
         }
@@ -694,19 +693,8 @@ class DockMonitor: NSObject, ObservableObject {
             statusMessage = "Cannot relocate Dock: Accessibility permission required"
             return
         }
-        guard let edgePoint = exposedTriggerPoint(for: anchorDisplay) else {
-            statusMessage = "Cannot relocate Dock: selected display has no exposed Dock edge"
-            return
-        }
-        var approachPoint = edgePoint
-        switch dockPosition {
-        case .bottom: approachPoint.y -= 50
-        case .left: approachPoint.x += 50
-        case .right: approachPoint.x -= 50
-        }
-
         // Check if dock is already on the anchored display
-        if let currentDockDisplay = getCurrentDockDisplayID(), currentDockDisplay == anchorDisplayID {
+        if let currentDockDisplay = getCurrentDockDisplayID(), currentDockDisplay == targetDisplayID {
             DispatchQueue.main.async { [weak self] in
                 self?.statusMessage = "Dock is already on \(anchorDisplay.name)"
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
@@ -719,6 +707,17 @@ class DockMonitor: NSObject, ObservableObject {
                 }
             }
             return
+        }
+
+        guard let edgePoint = exposedTriggerPoint(for: anchorDisplay) else {
+            statusMessage = "Cannot relocate Dock: selected display has no exposed Dock edge"
+            return
+        }
+        var approachPoint = edgePoint
+        switch dockPosition {
+        case .bottom: approachPoint.y -= 50
+        case .left: approachPoint.x += 50
+        case .right: approachPoint.x -= 50
         }
 
         DispatchQueue.main.async { [weak self] in
@@ -810,6 +809,8 @@ class DockMonitor: NSObject, ObservableObject {
                 let actual = self.getCurrentDockDisplayID()
                 if actual == anchorDisplay.id {
                     self.statusMessage = "Dock relocation verified on \(anchorDisplay.name)"
+                } else if actual == nil {
+                    self.statusMessage = "Relocation attempted — Dock position unavailable"
                 } else if attempt < 3 {
                     self.statusMessage = "Dock relocation unconfirmed — retrying..."
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
@@ -833,35 +834,33 @@ class DockMonitor: NSObject, ObservableObject {
         // Use accessibility API to find dock window position
         let dockElement = AXUIElementCreateApplication(dockApp!.processIdentifier)
 
-        var windowsValue: CFTypeRef?
-        let result = AXUIElementCopyAttributeValue(dockElement, kAXWindowsAttribute as CFString, &windowsValue)
+        // The Dock exposes its icon strip as an AXList child, not necessarily
+        // as an AXWindow. Reading AXWindows alone can return no position.
+        var childrenValue: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(dockElement, kAXChildrenAttribute as CFString, &childrenValue) == .success,
+              let children = childrenValue as? [AXUIElement] else { return nil }
 
-        guard result == .success, let windows = windowsValue as? [AXUIElement], !windows.isEmpty else {
-            return nil
-        }
+        for child in children {
+            var role: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(child, kAXRoleAttribute as CFString, &role) == .success,
+                  role as? String == kAXListRole else { continue }
 
-        // Get the position of the first dock window
-        var positionValue: CFTypeRef?
-        let posResult = AXUIElementCopyAttributeValue(windows[0], kAXPositionAttribute as CFString, &positionValue)
-
-        guard posResult == .success else {
-            return nil
-        }
-
-        var position = CGPoint.zero
-        if let positionValue = positionValue, AXValueGetValue(positionValue as! AXValue, .cgPoint, &position) {
-            // Use the window center: its origin can sit exactly on a display seam.
+            var positionValue: CFTypeRef?
             var sizeValue: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(child, kAXPositionAttribute as CFString, &positionValue) == .success,
+                  AXUIElementCopyAttributeValue(child, kAXSizeAttribute as CFString, &sizeValue) == .success,
+                  let positionValue, let sizeValue,
+                  CFGetTypeID(positionValue) == AXValueGetTypeID(),
+                  CFGetTypeID(sizeValue) == AXValueGetTypeID() else { continue }
+
+            var origin = CGPoint.zero
             var size = CGSize.zero
-            if AXUIElementCopyAttributeValue(windows[0], kAXSizeAttribute as CFString, &sizeValue) == .success,
-               let sizeValue, AXValueGetValue(sizeValue as! AXValue, .cgSize, &size) {
-                position.x += size.width / 2
-                position.y += size.height / 2
-            }
-            for display in availableDisplays {
-                if display.frame.contains(position) {
-                    return display.id
-                }
+            guard AXValueGetValue(positionValue as! AXValue, .cgPoint, &origin),
+                  AXValueGetValue(sizeValue as! AXValue, .cgSize, &size),
+                  size.width > 0, size.height > 0 else { continue }
+            let center = CGPoint(x: origin.x + size.width / 2, y: origin.y + size.height / 2)
+            if let display = availableDisplays.first(where: { $0.frame.contains(center) }) {
+                return display.id
             }
         }
 
