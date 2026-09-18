@@ -837,6 +837,7 @@ struct PermissionHelpSheet: View {
     }
 }
 
+#if !LOCAL_BUILD
 #Preview {
     ContentView()
         .environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
@@ -845,3 +846,5 @@ struct PermissionHelpSheet: View {
         .environmentObject(UpdateChecker())
 }
 
+
+#endif
