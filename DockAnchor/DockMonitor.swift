@@ -109,6 +109,7 @@ class DockMonitor: NSObject, ObservableObject {
 
     /// Flag to suppress user mouse input during dock relocation
     private var relocationInFlight = false
+    private var relocationRequestedWhileInFlight = false
     private var isRelocating = false
 
     /// Magic value to identify our synthetic events (so we don't block our own events)
@@ -674,7 +675,10 @@ class DockMonitor: NSObject, ObservableObject {
 
     /// Moves the dock to the anchored display by simulating mouse movement to the dock trigger zone
     func relocateDockToAnchoredDisplay(attempt: Int = 1) {
-        guard !relocationInFlight else { return }
+        guard !relocationInFlight else {
+            relocationRequestedWhileInFlight = true
+            return
+        }
         updateAvailableDisplays()
         guard let anchorDisplay = availableDisplays.first(where: { $0.id == anchorDisplayID }) else {
             statusMessage = "Cannot relocate dock - anchor display not found"
@@ -797,6 +801,11 @@ class DockMonitor: NSObject, ObservableObject {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) { [weak self] in
                 guard let self else { return }
                 self.relocationInFlight = false
+                if self.relocationRequestedWhileInFlight {
+                    self.relocationRequestedWhileInFlight = false
+                    self.relocateDockToAnchoredDisplay()
+                    return
+                }
                 guard self.anchorDisplayUUID == targetUUID else { return }
                 let actual = self.getCurrentDockDisplayID()
                 if actual == anchorDisplay.id {
